@@ -17,7 +17,7 @@
 
 | # | System Name | Category | Priority | Status | Design Doc | Depends On |
 |---|-------------|----------|----------|--------|------------|------------|
-| 1 | Input Handling | Core | MVP | Not Started | — | None |
+| 1 | Input Handling | Core | MVP | Designed | design/gdd/input-handling.md | None |
 | 2 | Player Camera | Core | MVP | Not Started | — | Input Handling |
 | 3 | Hover Detection | Core | MVP | Not Started | — | Player Camera |
 | 4 | Object State | Core | MVP | Not Started | — | Save/Load |
@@ -136,10 +136,10 @@
 | Metric | Count |
 |--------|-------|
 | Total systems identified | 15 |
-| Design docs started | 0 |
+| Design docs started | 1 |
 | Design docs reviewed | 0 |
 | Design docs approved | 0 |
-| MVP systems designed | 0/7 |
+| MVP systems designed | 1/7 |
 | Vertical Slice systems designed | 0/4 |
 | Alpha systems designed | 0/3 |
 | Full Vision systems designed | 0/1 |
