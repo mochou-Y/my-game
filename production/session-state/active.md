@@ -4,13 +4,13 @@
 
 ## Current Task
 
-Input Handling GDD complete
+Object State GDD complete
 
 ## Status
 
 - **Phase**: Pre-production
-- **Milestone**: GDD Authoring — Input Handling COMPLETE
-- **File**: design/gdd/input-handling.md
+- **Milestone**: GDD Authoring — Object State COMPLETE
+- **File**: design/gdd/object-state.md
 - **Sections**: All 8 written (Overview, Player Fantasy, Detailed Design, Formulas, Edge Cases, Dependencies, Tuning Knobs, Acceptance Criteria)
 
 ## Completed This Session
