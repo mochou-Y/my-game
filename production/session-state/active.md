@@ -4,13 +4,13 @@
 
 ## Current Task
 
-Object State GDD complete
+Player Camera GDD complete
 
 ## Status
 
 - **Phase**: Pre-production
-- **Milestone**: GDD Authoring — Object State COMPLETE
-- **File**: design/gdd/object-state.md
+- **Milestone**: GDD Authoring — Player Camera COMPLETE
+- **File**: design/gdd/player-camera.md
 - **Sections**: All 8 written (Overview, Player Fantasy, Detailed Design, Formulas, Edge Cases, Dependencies, Tuning Knobs, Acceptance Criteria)
 
 ## Completed This Session
