@@ -4,13 +4,13 @@
 
 ## Current Task
 
-Player Camera GDD complete
+Hover Detection GDD complete
 
 ## Status
 
 - **Phase**: Pre-production
-- **Milestone**: GDD Authoring — Player Camera COMPLETE
-- **File**: design/gdd/player-camera.md
+- **Milestone**: GDD Authoring — Hover Detection COMPLETE
+- **File**: design/gdd/hover-detection.md
 - **Sections**: All 8 written (Overview, Player Fantasy, Detailed Design, Formulas, Edge Cases, Dependencies, Tuning Knobs, Acceptance Criteria)
 
 ## Completed This Session
