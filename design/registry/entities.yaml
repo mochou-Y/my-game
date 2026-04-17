@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: ""
+last_updated: "2026-04-17"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -139,7 +139,60 @@ formulas: []
 #
 # Required fields: name, status, source, referenced_by, value, unit, added
 
-constants: []
+constants:
+  - name: fov
+    status: active
+    source: design/gdd/input-handling.md
+    referenced_by:
+      - design/gdd/input-handling.md
+      - design/gdd/player-camera.md
+    value: 85
+    value_min: 60
+    value_max: 110
+    unit: degrees
+    notes: "Vertical field of view (Godot standard). Input Handling exposes the setting; Player Camera applies it to Camera3D.fov."
+    added: 2026-04-17
+    revised: ""
+
+  - name: mouse_sensitivity
+    status: active
+    source: design/gdd/input-handling.md
+    referenced_by:
+      - design/gdd/input-handling.md
+      - design/gdd/player-camera.md
+    value: 0.25
+    value_min: 0.1
+    value_max: 2.0
+    unit: multiplier
+    notes: "Camera rotation speed multiplier for mouse input. Input Handling applies this to raw mouse motion before passing to Player Camera."
+    added: 2026-04-17
+    revised: ""
+
+  - name: gamepad_sensitivity
+    status: active
+    source: design/gdd/input-handling.md
+    referenced_by:
+      - design/gdd/input-handling.md
+      - design/gdd/player-camera.md
+    value: 1.0
+    value_min: 0.1
+    value_max: 2.0
+    unit: multiplier
+    notes: "Camera rotation speed multiplier for gamepad stick. Input Handling applies this to stick position before passing to Player Camera."
+    added: 2026-04-17
+    revised: ""
+
+  - name: invert_y
+    status: active
+    source: design/gdd/input-handling.md
+    referenced_by:
+      - design/gdd/input-handling.md
+      - design/gdd/player-camera.md
+    value: false
+    unit: boolean
+    notes: "Y-axis inversion toggle. When true, Input Handling multiplies pitch delta by -1. Player Camera receives pre-inverted values."
+    added: 2026-04-17
+    revised: ""
 
 # Example:
 #
