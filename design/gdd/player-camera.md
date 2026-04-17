@@ -1,6 +1,6 @@
 # Player Camera
 
-> **Status**: Designed
+> **Status**: Approved
 > **Author**: user + agents
 > **Last Updated**: 2026-04-17
 > **Implements Pillar**: Pillar 1 — Muscle Memory as the Enemy
@@ -42,12 +42,11 @@ In a world where every object fights the player's instincts, the camera is their
 
 Each frame, the camera applies look deltas directly to rotation with no smoothing or interpolation:
 
-1. Query `InputHandling.get_look_delta()` to receive accumulated mouse/stick motion
+1. Query `InputHandling.get_look_delta()` to receive accumulated mouse/stick motion **already scaled by sensitivity and inverted if enabled**
 2. Apply directly to camera rotation (yaw for X delta, pitch for Y delta)
-3. Apply Y-axis inversion if enabled (multiply Y delta by -1)
-4. No smoothing buffer, no interpolation — input is 1:1 with rotation
+3. No smoothing buffer, no interpolation — input is 1:1 with rotation
 
-This creates instantaneous, predictable camera response.
+**Note:** Sensitivity and Y-axis inversion are applied by Input Handling, not by Player Camera. This prevents double-application bugs.
 
 **Rule 2: Pitch Clamping**
 
@@ -159,10 +158,9 @@ Hover Detection uses these for raycast origin and direction.
 
 **Input Handling** (upstream, designed)
 
-- **Queries**: `get_look_delta() -> Vector2` — accumulated mouse/stick motion for this frame
-- **Queries**: `is_invert_y_enabled() -> bool` — whether Y-axis should be inverted
+- **Queries**: `get_look_delta() -> Vector2` — processed look delta for this frame (already scaled by sensitivity and inverted if enabled)
 - **Signals**: Connects to input state changes (gameplay/paused/locked) to sync camera state
-- **Contract**: Look delta is reset each frame after being queried; call once per frame
+- **Contract**: Look delta is reset each frame after being queried; call once per frame. Input Handling owns sensitivity and inversion — Player Camera applies values directly.
 
 **Hover Detection** (downstream, not designed)
 
@@ -192,30 +190,30 @@ Hover Detection uses these for raycast origin and direction.
 
 ### Camera Rotation Delta Formula
 
-The `raw_rotation_delta` formula converts input motion to rotation deltas:
+The `raw_rotation_delta` formula applies look deltas received from Input Handling:
 
 `raw_rotation_delta = (yaw_delta, pitch_delta)`
 
 Where:
-- `yaw_delta = look_delta.x * sensitivity`
-- `pitch_delta = look_delta.y * sensitivity * invert_multiplier`
+- `yaw_delta = look_delta.x`
+- `pitch_delta = look_delta.y`
 
 **Variables:**
 
 | Variable | Symbol | Type | Range | Description |
 |----------|--------|------|-------|-------------|
-| look_delta | ΔL | Vector2 | (unbounded) | Accumulated input motion from `get_look_delta()`. x = horizontal, y = vertical |
-| sensitivity | S | float | 0.1–2.0 | User-configurable rotation speed multiplier |
-| invert_multiplier | I<sub>y</sub> | int | {-1, 1} | Y-axis inversion: -1 if invert_y enabled, 1 otherwise |
-| raw_rotation_delta | ΔR | Vector2 | (unbounded) | Rotation deltas in degrees. x = yaw, y = pitch |
+| look_delta | ΔL | Vector2 | [-100,000, +100,000] | Processed input motion from `get_look_delta()`. Already scaled by sensitivity and inverted by Input Handling. x = horizontal (yaw), y = vertical (pitch) |
+| raw_rotation_delta | ΔR | Vector2 | [-100,000, +100,000] | Rotation deltas in degrees. x = yaw, y = pitch |
 
-**Output Range:** Unbounded deltas; final rotation is clamped by subsequent formulas.
+**Output Range:** Bounded by look_delta clamping from Input Handling.
+
+**Note on sensitivity ownership:** Sensitivity and Y-axis inversion are owned by Input Handling. Player Camera receives `look_delta` already scaled and inverted. This prevents double-application bugs.
 
 **Example:**
 ```
-Input: look_delta = (2.5, -1.8), sensitivity = 0.8, invert_y = false (I_y = 1)
-yaw_delta = 2.5 * 0.8 = 2.0°
-pitch_delta = -1.8 * 0.8 * 1 = -1.44° (looking down)
+Input: look_delta = (2.0, -1.44) from Input Handling (already scaled at sensitivity 0.8)
+yaw_delta = 2.0°
+pitch_delta = -1.44° (looking down)
 raw_rotation_delta = (2.0°, -1.44°)
 ```
 
@@ -223,33 +221,51 @@ raw_rotation_delta = (2.0°, -1.44°)
 
 ### Pitch Soft Stop Formula
 
-The `soft_stop_multiplier` formula reduces sensitivity within the soft stop zone:
+The `soft_stop_multiplier` formula reduces sensitivity within the soft stop zone **only when moving toward the limit**:
 
-`M_soft = lerp(1.0, 0.0, (|pitch_current| - θ_soft) / (θ_max - θ_soft))`
+```
+if is_moving_toward_limit(pitch_current, pitch_delta):
+    M_soft = lerp(1.0, 0.0, (|pitch_current| - θ_soft) / (θ_max - θ_soft))
+else:
+    M_soft = 1.0
+```
+
+Where `is_moving_toward_limit(pitch_current, pitch_delta)` is true when:
+- `pitch_current > 0 AND pitch_delta > 0` (positive pitch, looking further up)
+- `pitch_current < 0 AND pitch_delta < 0` (negative pitch, looking further down)
 
 **Variables:**
 
 | Variable | Symbol | Type | Range | Description |
 |----------|--------|------|-------|-------------|
 | pitch_current | θ<sub>cur</sub> | float | -85° to +85° | Current pitch angle in degrees |
+| pitch_delta | Δθ | float | [-100,000, +100,000] | Raw pitch rotation from rotation delta formula, in degrees |
 | soft_stop_start | θ<sub>soft</sub> | float | 75° | Angle where soft stop begins (constant) |
 | pitch_limit | θ<sub>max</sub> | float | 85° | Hard pitch limit in degrees (constant) |
 | soft_stop_multiplier | M<sub>soft</sub> | float | 0.0–1.0 | Output: sensitivity multiplier for pitch |
 
+**Precondition:** `soft_stop_start < pitch_limit` — if violated, formula behavior is undefined.
+
 **Output Range:**
 
 - 1.0 when |θ<sub>cur</sub>| ≤ 75°
-- 0.5 at |θ<sub>cur</sub>| = 80°
-- Approaches 0.0 as |θ<sub>cur</sub>| approaches 85°
+- 1.0 when moving **away** from limit (exiting soft stop zone)
+- 0.5 at |θ<sub>cur</sub>| = 80° when moving toward limit
+- Approaches 0.0 as |θ<sub>cur</sub>| approaches 85° when moving toward limit
 
 **Example:**
 ```
-Input: pitch_current = 78°
+Input: pitch_current = 78°, pitch_delta = +5° (moving toward +85° limit)
+is_moving_toward_limit = true (78 > 0 AND +5 > 0)
 t = (78 - 75) / 10 = 0.3
 M_soft = lerp(1.0, 0.0, 0.3) = 0.7
 
+Input: pitch_current = 78°, pitch_delta = -5° (moving away from limit toward center)
+is_moving_toward_limit = false (78 > 0 BUT -5 < 0)
+M_soft = 1.0 (full sensitivity when exiting soft stop)
+
 Input: pitch_current = 60°
-|θ_cur| < 75°, so M_soft = 1.0 (full sensitivity)
+|θ_cur| < 75°, so M_soft = 1.0 (not in soft stop zone)
 ```
 
 ---
@@ -361,11 +377,11 @@ yaw_final = 170 + 25 = 195°
 
 ### Invalid or Extreme look_delta Values
 
-- **If look_delta.x or look_delta.y is NaN**: Return early without applying rotation. Log a warning: "Invalid look_delta (NaN) from Input Handling — frame skipped." Camera rotation remains unchanged for this frame.
+- **If look_delta.x or look_delta.y is NaN**: Input Handling should have already handled this. If received, return early without applying rotation. Log a warning: "Invalid look_delta (NaN) received — frame skipped."
 
-- **If look_delta.x or look_delta.y exceeds ±100,000 pixels**: Clamp to ±100,000 before applying. Log a warning: "Abnormally large look_delta — clamped to ±100,000." Prevents a single glitched frame from spinning the camera excessively.
+- **If look_delta.x or look_delta.y exceeds ±100,000**: Input Handling should have already clamped this. If received, apply directly (trust Input Handling's preprocessing).
 
-- **If look_delta contains INF or -INF**: Clamp to ±100,000. Log a warning. Same rationale as above.
+- **If look_delta contains INF or -INF**: Input Handling should have already handled this. If received, return early and log a warning.
 
 ### Hover Detection Query During Paused State
 
@@ -380,9 +396,9 @@ yaw_final = 170 + 25 = 195°
 **Input Handling** (designed)
 
 - **Hard dependency** — Camera cannot function without look input
-- **Interface**: `get_look_delta() -> Vector2`, `is_invert_y_enabled() -> bool`
+- **Interface**: `get_look_delta() -> Vector2` — returns processed look delta (already scaled by sensitivity and inverted if enabled)
 - **Signals**: Input state changes (gameplay/paused/locked) to sync camera state
-- **Contract**: Look delta is reset each frame after being queried; call once per frame
+- **Contract**: Look delta is reset each frame after being queried; call once per frame. Values are pre-processed (sensitivity applied, inversion applied, NaN/extreme values handled).
 
 **Engine dependencies:**
 
@@ -465,7 +481,7 @@ yaw_final = 170 + 25 = 195°
 
 ### Notes
 
-- **Sensitivity** and **invert_y** are owned by Input Handling, not this system. Player Camera reads them from Input Handling.
+- **Sensitivity** and **invert_y** are owned by Input Handling, not this system. Input Handling applies these settings before passing `look_delta` to Player Camera. This prevents double-application bugs.
 - **Camera position** is not a tuning knob — it is driven by player character position, not the camera system itself.
 
 ## Visual/Audio Requirements
@@ -480,11 +496,11 @@ yaw_final = 170 + 25 = 195°
 
 ### Camera Rotation — Yaw
 
-1. **GIVEN** the camera is in Gameplay state with default pitch (0°), **WHEN** the player moves the mouse/stick horizontally by a known delta (e.g., 100 units at sensitivity 0.5), **THEN** the camera yaw changes by exactly 50° (raw_delta.x × sensitivity), with no smoothing or interpolation applied.
+1. **GIVEN** the camera is in Gameplay state with yaw at 0°, **WHEN** Input Handling returns `get_look_delta() = (50.0, 0.0)` (already scaled by sensitivity), **THEN** the camera yaw becomes exactly 50° after the frame processes.
 
 ### Camera Rotation — Pitch
 
-2. **GIVEN** the camera is in Gameplay state with pitch at 0°, **WHEN** the player moves the mouse/stick vertically by a known delta (e.g., 50 units at sensitivity 0.5, no invert), **THEN** the camera pitch changes by exactly 25° (raw_delta.y × sensitivity), with no smoothing applied.
+2. **GIVEN** the camera is in Gameplay state with pitch at 0°, **WHEN** Input Handling returns `get_look_delta() = (0.0, 25.0)` (already scaled by sensitivity, no inversion), **THEN** the camera pitch becomes exactly 25° after the frame processes.
 
 ### Pitch Clamping — Hard Limits
 
@@ -494,62 +510,64 @@ yaw_final = 170 + 25 = 195°
 
 ### Pitch Clamping — Soft Stop
 
-5. **GIVEN** the camera pitch is at 70°, **WHEN** the player inputs a pitch increase of +5° (to reach 75°), **THEN** the camera pitch becomes exactly 75° with no soft stop applied (M_soft = 1.0).
+5. **GIVEN** the camera pitch is at 70°, **WHEN** Input Handling returns `get_look_delta() = (0.0, 5.0)`, **THEN** the camera pitch becomes exactly 75° with no soft stop applied (M_soft = 1.0 because |70°| < 75°).
 
-6. **GIVEN** the camera pitch is at 75°, **WHEN** the player inputs a pitch increase that would normally add +10°, **THEN** the camera pitch reaches 85° with the input effectively reduced by the soft stop (M_soft scales from 1.0 to 0.0 across the 75°–85° range).
+6. **GIVEN** the camera pitch is at 78°, **WHEN** Input Handling returns `get_look_delta() = (0.0, 10.0)`, **THEN** the camera pitch becomes exactly 85° (M_soft = 0.7 at 78°, reducing the 10° delta to 7°, and the remaining movement applies M_soft progressively until reaching 85°).
 
-7. **GIVEN** the camera pitch is at exactly 80°, **WHEN** the formula M_soft = lerp(1.0, 0.0, (80 − 75) / 10) is evaluated, **THEN** M_soft equals exactly 0.5, meaning input is reduced by half.
+7. **GIVEN** the camera pitch is at exactly 80°, **WHEN** the formula `M_soft = lerp(1.0, 0.0, (|80| - 75) / 10)` is evaluated with pitch_delta moving toward limit, **THEN** M_soft equals exactly 0.5, meaning input is reduced by half.
+
+8. **GIVEN** the camera pitch is at 80°, **WHEN** Input Handling returns `get_look_delta() = (0.0, -10.0)` (moving away from limit toward center), **THEN** M_soft equals 1.0 (full sensitivity when exiting soft stop zone).
 
 ### Y-Axis Inversion
 
-8. **GIVEN** invert_y is disabled (invert_multiplier = 1.0), **WHEN** the player moves the mouse/stick upward, **THEN** the camera pitch increases (looks up).
+9. **GIVEN** invert_y is disabled in Input Handling, **WHEN** the player moves the mouse/stick upward (negative Y in screen coordinates for mouse, positive Y for gamepad), **THEN** Input Handling returns positive pitch_delta and the camera pitch increases (looks up).
 
-9. **GIVEN** invert_y is enabled (invert_multiplier = −1.0), **WHEN** the player moves the mouse/stick upward, **THEN** the camera pitch decreases (looks down).
+10. **GIVEN** invert_y is enabled in Input Handling, **WHEN** the player moves the mouse/stick upward, **THEN** Input Handling returns negative pitch_delta and the camera pitch decreases (looks down).
 
 ### FOV Configuration
 
-10. **GIVEN** the game launches with default settings, **WHEN** the camera initializes, **THEN** the field of view is exactly 85°.
+11. **GIVEN** the game launches with default settings, **WHEN** the camera initializes, **THEN** the field of view is exactly 85°.
 
-11. **GIVEN** the player attempts to set FOV below the minimum, **WHEN** FOV is set to 50°, **THEN** the field of view is clamped to exactly 60°.
+12. **GIVEN** the player attempts to set FOV below the minimum, **WHEN** FOV is set to 50°, **THEN** the field of view is clamped to exactly 60°.
 
-12. **GIVEN** the player attempts to set FOV above the maximum, **WHEN** FOV is set to 120°, **THEN** the field of view is clamped to exactly 110°.
+13. **GIVEN** the player attempts to set FOV above the maximum, **WHEN** FOV is set to 120°, **THEN** the field of view is clamped to exactly 110°.
 
 ### Camera States
 
-13. **GIVEN** the camera is in Gameplay state, **WHEN** the player provides look input, **THEN** the camera rotates according to input.
+14. **GIVEN** the camera is in Gameplay state, **WHEN** the player provides look input, **THEN** the camera rotates according to input.
 
-14. **GIVEN** the camera is in Paused state, **WHEN** the player provides look input, **THEN** the camera does not rotate.
+15. **GIVEN** the camera is in Paused state, **WHEN** the player provides look input, **THEN** the camera does not rotate.
 
-15. **GIVEN** the camera is in Cutscene state, **WHEN** the player provides look input, **THEN** the camera does not rotate.
+16. **GIVEN** the camera is in Cutscene state, **WHEN** the player provides look input, **THEN** the camera does not rotate.
 
-16. **GIVEN** the camera is in Locked state, **WHEN** the player provides look input, **THEN** the camera does not rotate.
+17. **GIVEN** the camera is in Locked state, **WHEN** the player provides look input, **THEN** the camera does not rotate.
 
-17. **GIVEN** the camera is in Paused state with pitch at 30° and yaw at 90°, **WHEN** the camera transitions to Gameplay state, **THEN** the camera retains pitch 30° and yaw 90° (no reset on state change).
+18. **GIVEN** the camera is in Paused state with pitch at 30° and yaw at 90°, **WHEN** the camera transitions to Gameplay state, **THEN** the camera retains pitch 30° and yaw 90° (no reset on state change).
 
 ### Camera Transform Interfaces
 
-18. **GIVEN** the camera is positioned at world coordinates (100, 50, 200), **WHEN** get_camera_position() is called, **THEN** the function returns Vector3(100, 50, 200).
+19. **GIVEN** the camera is positioned at world coordinates (100, 50, 200), **WHEN** get_camera_position() is called, **THEN** the function returns Vector3(100, 50, 200).
 
-19. **GIVEN** the camera has yaw 0° and pitch 0° (facing +Z), **WHEN** get_camera_forward() is called, **THEN** the function returns a normalized Vector3 approximately (0, 0, 1).
+20. **GIVEN** the camera has yaw 0° and pitch 0° (facing -Z in Godot's coordinate system), **WHEN** get_camera_forward() is called, **THEN** the function returns a normalized Vector3 approximately (0, 0, -1) within tolerance of 0.001.
 
-20. **GIVEN** the camera has yaw 0° and pitch 45° (looking up), **WHEN** get_camera_forward() is called, **THEN** the function returns a normalized Vector3 with a positive Y component and positive Z component, magnitude exactly 1.0.
+21. **GIVEN** the camera has yaw 0° and pitch 45° (looking up), **WHEN** get_camera_forward() is called, **THEN** the function returns a normalized Vector3 with a positive Y component and negative Z component, magnitude exactly 1.0 within tolerance of 0.001.
 
-21. **GIVEN** the camera exists in the scene, **WHEN** get_camera_transform() is called, **THEN** the function returns a Transform3D with valid origin (camera position) and valid basis (camera orientation).
+22. **GIVEN** the camera exists in the scene, **WHEN** get_camera_transform() is called, **THEN** the function returns a Transform3D where origin equals camera world position and basis columns have magnitude 1.0 ± 0.001 and are orthogonal.
 
 ### Edge Cases
 
-22. **GIVEN** the camera pitch is at 0°, **WHEN** the player inputs an extremely fast mouse movement (e.g., flick from 0° to 45° in one frame), **THEN** the camera instantly reaches 45° with no interpolation over multiple frames.
+23. **GIVEN** the camera pitch is at 0°, **WHEN** Input Handling returns `get_look_delta() = (0.0, 45.0)`, **THEN** the camera pitch becomes exactly 45° after the frame (no interpolation over multiple frames).
 
-23. **GIVEN** the camera pitch is at exactly 85°, **WHEN** the player inputs any positive pitch delta, **THEN** the camera pitch remains at 85° (hard clamp prevents further movement).
+24. **GIVEN** the camera pitch is at exactly 85°, **WHEN** Input Handling returns `get_look_delta() = (0.0, 10.0)`, **THEN** the camera pitch remains at 85° (hard clamp prevents further movement).
 
-24. **GIVEN** the camera yaw is at 350°, **WHEN** the player inputs a yaw increase of +20°, **THEN** the camera yaw becomes 370° (unlimited, no wrapping to 10°).
+25. **GIVEN** the camera yaw is at 350°, **WHEN** Input Handling returns `get_look_delta() = (20.0, 0.0)`, **THEN** the camera yaw becomes 370° (unlimited, no wrapping to 10°).
 
-25. **GIVEN** the camera is in Gameplay state at any orientation, **WHEN** the player provides no input for 60 seconds, **THEN** the camera orientation remains unchanged (no drift, no auto-centering).
+26. **GIVEN** the camera is in Gameplay state at any orientation, **WHEN** the player provides no input for 60 seconds, **THEN** the camera orientation remains unchanged (no drift, no auto-centering).
 
 ### Formula Verification
 
-26. **GIVEN** look_delta input is (200, 100) with sensitivity 0.3 and invert_multiplier = 1.0, **WHEN** raw_rotation_delta is calculated, **THEN** raw_rotation_delta = (60°, 30°).
+27. **GIVEN** Input Handling returns `get_look_delta() = (60.0, 30.0)` (already scaled), **WHEN** raw_rotation_delta is calculated, **THEN** raw_rotation_delta = (60°, 30°).
 
-27. **GIVEN** pitch_current = 50°, pitch_delta = +5°, M_soft = 1.0 (no soft stop), **WHEN** pitch_final is calculated, **THEN** pitch_final = 55°.
+28. **GIVEN** pitch_current = 50°, pitch_delta = +5°, M_soft = 1.0 (not in soft stop zone), **WHEN** pitch_final is calculated, **THEN** pitch_final = 55°.
 
-28. **GIVEN** pitch_current = 78°, pitch_delta = +5°, M_soft = 0.7 (within soft stop range), **WHEN** pitch_final is calculated, **THEN** pitch_final = 81.5°.
+29. **GIVEN** pitch_current = 78°, pitch_delta = +5°, M_soft = 0.7 (in soft stop zone, moving toward limit), **WHEN** pitch_final is calculated, **THEN** pitch_final = 81.5°.

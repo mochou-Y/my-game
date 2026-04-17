@@ -68,10 +68,20 @@ Mouse look uses `InputEventMouseMotion.relative` for camera rotation:
 
 1. Accumulate relative motion each frame
 2. Apply sensitivity multiplier (default 0.25)
-3. Scale by delta time for frame-rate independence
-4. Pass to Player Camera system via `get_look_delta()` query
+3. Apply Y-axis inversion if enabled (multiply Y by -1)
+4. **Do NOT scale by delta time** — mouse motion is displacement (pixels moved), not rate (pixels per second). Scaling by delta would make sensitivity frame-rate dependent.
+5. Pass to Player Camera system via `get_look_delta()` query
 
-Analog stick look uses `Input.get_vector()` with deadzone applied.
+Gamepad stick look uses `Input.get_vector()` with deadzone applied:
+
+1. Read stick position via `Input.get_vector()` (already returns -1.0 to 1.0)
+2. Apply deadzone (default 0.15)
+3. Apply sensitivity multiplier (default 1.0)
+4. Apply Y-axis inversion if enabled
+5. **Scale by delta time** — stick position is a rate (how far the stick is held), not displacement
+6. Pass to Player Camera system via `get_look_delta()` query
+
+**Important:** `get_look_delta()` returns values already scaled by sensitivity and inverted if enabled. Player Camera applies these values directly without further processing.
 
 **Rule 4: Interaction Input**
 
@@ -139,9 +149,9 @@ Remapped bindings are saved to `user://input_remaps.cfg` (ConfigFile format):
 
 **Player Camera** (downstream)
 
-- **Queries**: `get_look_delta() -> Vector2` — returns accumulated mouse/stick motion
+- **Queries**: `get_look_delta() -> Vector2` — returns processed look delta (scaled by sensitivity, inverted if enabled)
 - **Queries**: `get_move_vector() -> Vector2` — returns normalized movement input
-- **Contract**: Look delta is reset each frame after being queried
+- **Contract**: Look delta is reset each frame after being queried; values are pre-processed
 
 **Interaction System** (downstream)
 
@@ -163,29 +173,52 @@ Remapped bindings are saved to `user://input_remaps.cfg` (ConfigFile format):
 
 ## Formulas
 
-### Look Sensitivity Formula
+### Mouse Look Processing Formula
 
-The `look_sensitivity` formula is defined as:
+For mouse input, the `look_delta` formula is:
 
-```
-look_delta = raw_input * sensitivity * invert_y
-```
+`look_delta = raw_mouse_motion * sensitivity * invert_y`
+
+**Note:** Mouse motion is NOT scaled by delta time because it represents displacement (pixels moved since last frame), not rate.
 
 **Variables:**
 
 | Variable | Symbol | Type | Range | Description |
 |----------|--------|------|-------|-------------|
-| raw_input | r | Vector2 | -∞ to +∞ | Raw mouse motion or stick position |
+| raw_mouse_motion | r | Vector2 | [-100,000, +100,000] | Raw mouse motion from `InputEventMouseMotion.relative` |
 | sensitivity | s | float | 0.1 to 2.0 | User-configurable sensitivity multiplier |
 | invert_y | i_y | int | 1 or -1 | Y-axis inversion (1 = normal, -1 = inverted) |
-| look_delta | d | Vector2 | -∞ to +∞ | Processed camera rotation delta |
+| look_delta | d | Vector2 | [-100,000, +100,000] | Processed camera rotation delta (degrees) |
 
-**Output Range:** Depends on input device. Mouse: typically 0–200 pixels/frame at normal speed. Stick: -1.0 to 1.0 after deadzone.
-
-**Example:** Player moves mouse 50 pixels right with sensitivity 0.25:
+**Example:** Player moves mouse 50 pixels right with sensitivity 0.5:
 
 ```
-look_delta_x = 50 * 0.25 * 1 = 12.5 (degrees of rotation, approximately)
+look_delta_x = 50 * 0.5 * 1 = 25.0 (degrees of rotation)
+```
+
+---
+
+### Gamepad Look Processing Formula
+
+For gamepad input, the `look_delta` formula includes delta time scaling:
+
+`look_delta = stick_position * sensitivity * invert_y * rotation_speed * delta_time`
+
+**Variables:**
+
+| Variable | Symbol | Type | Range | Description |
+|----------|--------|------|-------|-------------|
+| stick_position | p | Vector2 | -1.0 to 1.0 | Stick position after deadzone applied |
+| sensitivity | s | float | 0.1 to 2.0 | User-configurable sensitivity multiplier |
+| invert_y | i_y | int | 1 or -1 | Y-axis inversion |
+| rotation_speed | ω | float | 90.0 | Base rotation speed in degrees per second at full deflection |
+| delta_time | Δt | float | 0.0 to 1.0 | Frame time in seconds |
+| look_delta | d | Vector2 | [-∞, +∞] | Processed camera rotation delta (degrees) |
+
+**Example:** Player holds stick fully right (1.0) with sensitivity 1.0 at 60 FPS:
+
+```
+look_delta_x = 1.0 * 1.0 * 1 * 90.0 * 0.0167 = 1.5 (degrees of rotation this frame)
 ```
 
 ---
@@ -267,6 +300,12 @@ clamped_value = clamp(raw_value, min_value, max_value)
 
 - **If two actions are pressed simultaneously (e.g., move_forward + move_back)**: Movement cancels out — player does not move. This is standard behavior from `Input.get_vector()`.
 
+- **If raw mouse motion contains NaN**: Return (0, 0) for `get_look_delta()`. Log a warning: "Invalid mouse motion (NaN) — frame skipped." Camera rotation remains unchanged for this frame.
+
+- **If raw mouse motion exceeds ±100,000 pixels**: Clamp to ±100,000 before processing. Log a warning: "Abnormally large mouse motion — clamped." Prevents a single glitched frame from spinning the camera excessively.
+
+- **If raw mouse motion contains INF or -INF**: Clamp to ±100,000. Log a warning. Same rationale as above.
+
 - **If player presses escape during mouse capture for the first time**: Mouse is released and pause menu opens. This is the intended way to exit gameplay.
 
 ## Dependencies
@@ -311,7 +350,7 @@ Camera    Interaction  Accessibility
 
 **Contracts that downstream systems must respect:**
 
-- `get_look_delta()` returns accumulated motion and resets the accumulator each frame. Call once per frame.
+- `get_look_delta()` returns processed motion (sensitivity applied, inversion applied, extreme values clamped) and resets the accumulator each frame. Call once per frame.
 - Discrete action queries (`is_*_pressed()`) return true only on the frame the action started. Do not rely on them across frames.
 
 ## Tuning Knobs
