@@ -21,7 +21,7 @@
 | 2 | Player Camera | Core | MVP | Approved | design/gdd/player-camera.md | Input Handling |
 | 3 | Hover Detection | Core | MVP | Designed | design/gdd/hover-detection.md | Player Camera |
 | 4 | Object State | Core | MVP | Designed | design/gdd/object-state.md | Save/Load |
-| 5 | Interaction System | Gameplay | MVP | Not Started | — | Input Handling, Hover Detection, Object State |
+| 5 | Interaction System | Gameplay | MVP | Designed | design/gdd/interaction-system.md | Input Handling, Hover Detection, Object State |
 | 6 | Inversion Logic | Gameplay | MVP | Not Started | — | Object State, Interaction System |
 | 7 | Visual Feedback | UI | MVP | Not Started | — | Object State, Inversion Logic |
 | 8 | Save/Load | Persistence | Vertical Slice | Not Started | — | None |
@@ -136,10 +136,10 @@
 | Metric | Count |
 |--------|-------|
 | Total systems identified | 15 |
-| Design docs started | 4 |
+| Design docs started | 5 |
 | Design docs reviewed | 1 |
 | Design docs approved | 1 |
-| MVP systems designed | 4/7 |
+| MVP systems designed | 5/7 |
 | Vertical Slice systems designed | 0/4 |
 | Alpha systems designed | 0/3 |
 | Full Vision systems designed | 0/1 |

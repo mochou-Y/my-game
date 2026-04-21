@@ -1,16 +1,16 @@
 # Session State
 
-> **Last Updated**: 2026-04-17
+> **Last Updated**: 2026-04-21
 
 ## Current Task
 
-Hover Detection GDD complete
+Interaction System GDD complete
 
 ## Status
 
 - **Phase**: Pre-production
-- **Milestone**: GDD Authoring — Hover Detection COMPLETE
-- **File**: design/gdd/hover-detection.md
+- **Milestone**: GDD Authoring — Interaction System COMPLETE
+- **File**: design/gdd/interaction-system.md
 - **Sections**: All 8 written (Overview, Player Fantasy, Detailed Design, Formulas, Edge Cases, Dependencies, Tuning Knobs, Acceptance Criteria)
 
 ## Completed This Session
