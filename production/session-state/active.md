@@ -4,13 +4,13 @@
 
 ## Current Task
 
-Interaction System GDD complete
+Inversion Logic GDD complete
 
 ## Status
 
 - **Phase**: Pre-production
-- **Milestone**: GDD Authoring — Interaction System COMPLETE
-- **File**: design/gdd/interaction-system.md
+- **Milestone**: GDD Authoring — Inversion Logic COMPLETE
+- **File**: design/gdd/inversion-logic.md
 - **Sections**: All 8 written (Overview, Player Fantasy, Detailed Design, Formulas, Edge Cases, Dependencies, Tuning Knobs, Acceptance Criteria)
 
 ## Completed This Session
